@@ -6,6 +6,7 @@ const WebSocket = require('ws');
 const os = require('os');
 const path = require('path');
 const { URL } = require('url');
+const { exec } = require('child_process');
 const db = require('./db');
 
 // ─── Rooms ─────────────────────────────────────────────────────
@@ -70,9 +71,89 @@ function broadcastToRoom(room, data) {
 
 // ─── Known users (everyone who has ever posted) ────────────────
 const knownUsers = new Set(db.getKnownUsers());
+knownUsers.add('HomeBot');
 
 function broadcastKnownUsers() {
   broadcast({ type: 'known_users', users: Array.from(knownUsers) });
+}
+
+// ─── HomeBot ───────────────────────────────────────────────────
+const HOMEBOT_COMMANDS = ['!ping','!uptime','!who','!storage','!network','!version','!help'];
+
+function handleBotCommand(text, room) {
+  const cmd = text.trim().split(/\s+/)[0].toLowerCase();
+  if (!HOMEBOT_COMMANDS.includes(cmd)) return;
+
+  function respond(response) {
+    const msg = { type: 'room_msg', room: room.name, from: 'HomeBot',
+                  text: response, ts: Date.now() };
+    db.saveMessage(msg);
+    broadcastToRoom(room, msg);
+  }
+
+  switch (cmd) {
+    case '!ping':
+      respond('🏓 Pong!');
+      break;
+
+    case '!uptime': {
+      const s = Math.floor(process.uptime());
+      const d = Math.floor(s / 86400);
+      const h = Math.floor((s % 86400) / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      respond(`⏱ Server uptime: ${d}d ${h}h ${m}m ${sec}s`);
+      break;
+    }
+
+    case '!who': {
+      const online = Array.from(clients.keys());
+      respond(online.length
+        ? `👥 Online (${online.length}): ${online.join(', ')}`
+        : '👥 Nobody is online right now.');
+      break;
+    }
+
+    case '!version':
+      respond(`📦 HomeChat v${require('./package.json').version} · Node ${process.version} · ${process.platform}`);
+      break;
+
+    case '!storage':
+      exec(
+        'powershell -NoProfile -Command "Get-PSDrive -PSProvider FileSystem | ForEach-Object { $_.Name + \': \' + [math]::Round($_.Free/1GB,1) + \'GB free of \' + [math]::Round(($_.Used+$_.Free)/1GB,1) + \'GB\' }"',
+        (err, stdout) => {
+          if (err || !stdout.trim()) return respond('❌ Could not read disk info.');
+          respond('💾 Disk space:\n' + stdout.trim());
+        }
+      );
+      break;
+
+    case '!network':
+      exec('arp -a', (err, stdout) => {
+        if (err || !stdout.trim()) return respond('❌ Could not read network info.');
+        const ips = stdout.split('\n')
+          .filter(l => /dynamic/i.test(l))
+          .map(l => l.trim().split(/\s+/)[0])
+          .filter(Boolean);
+        respond(ips.length
+          ? `📡 Devices on network (${ips.length}):\n${ips.join('\n')}`
+          : '📡 No devices found.');
+      });
+      break;
+
+    case '!help':
+      respond(
+        'HomeBot commands:\n' +
+        '!ping      — check if bot is alive\n' +
+        '!uptime    — server uptime\n' +
+        '!who       — who\'s online in HomeChat\n' +
+        '!storage   — disk space on the server\n' +
+        '!network   — devices on the home network\n' +
+        '!version   — app and Node version\n' +
+        '!help      — show this list'
+      );
+      break;
+  }
 }
 
 const app = express();
@@ -288,6 +369,7 @@ wss.on('connection', (ws) => {
       db.saveMessage(msg);
       broadcastToRoom(room, msg);
       if (!knownUsers.has(userName)) { knownUsers.add(userName); broadcastKnownUsers(); }
+      if (msg.text.startsWith('!')) handleBotCommand(msg.text, room);
 
     } else if (data.type === 'dm') {
       if (!userName) return;

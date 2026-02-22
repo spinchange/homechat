@@ -340,6 +340,18 @@ html, body {
 
 .msg-group.mine { align-items: flex-end; }
 .msg-group.theirs { align-items: flex-start; }
+.msg-group.bot { align-items: flex-start; }
+.msg-group.bot .sender-name { color: #a78bfa; }
+.msg-group.bot .bubble {
+  background: #1e1535;
+  color: var(--text);
+  font-family: ui-monospace, 'Cascadia Code', 'Courier New', monospace;
+  font-size: 13px;
+  border-bottom-left-radius: 4px;
+}
+.msg-group.bot .bubble:last-child { border-bottom-left-radius: 18px; }
+.msg-group.bot .bubble:not(:last-child) { border-bottom-left-radius: 4px; }
+.msg-group.bot .bubble:not(:first-child) { border-top-left-radius: 4px; }
 
 .msg-group .sender-name {
   font-size: 12px;

@@ -80,7 +80,7 @@ function openNewRoomForm() {
   newRoomMembers.classList.add('hidden');
   newRoomMembers.innerHTML = '';
   // Populate member checkboxes from known users (excluding self)
-  const others = knownUsers.filter(u => u !== myName);
+  const others = knownUsers.filter(u => u !== myName && u !== 'HomeBot');
   if (others.length > 0) {
     others.forEach(user => {
       const label = document.createElement('label');
@@ -438,7 +438,7 @@ function renderPeople() {
   peopleList.innerHTML = '';
 
   // Build combined list: known users + anyone online not yet known, minus self
-  const allUsers = [...new Set([...knownUsers, ...onlineUsers])].filter(u => u !== myName);
+  const allUsers = [...new Set([...knownUsers, ...onlineUsers])].filter(u => u !== myName && u !== 'HomeBot');
 
   // Sort: online first, then offline alphabetically
   allUsers.sort((a, b) => {
@@ -536,13 +536,14 @@ function renderMessages(msgs) {
     const newGroup = sender !== lastSender || timeDiff > 5 * 60 * 1000; // 5 min gap = new group
 
     if (newGroup) {
+      const isBot = sender === 'HomeBot';
       currentGroup = document.createElement('div');
-      currentGroup.className = 'msg-group ' + (isMe ? 'mine' : 'theirs');
+      currentGroup.className = 'msg-group ' + (isMe ? 'mine' : isBot ? 'bot' : 'theirs');
 
       if (!isMe) {
         const nameEl = document.createElement('div');
         nameEl.className = 'sender-name';
-        nameEl.textContent = sender;
+        nameEl.textContent = isBot ? '⚡ HomeBot' : sender;
         currentGroup.appendChild(nameEl);
       }
 
@@ -588,13 +589,14 @@ function appendMessage(msg) {
     const oldTime = group.querySelector('.msg-time');
     if (oldTime) oldTime.remove();
   } else {
+    const isBot = msg.from === 'HomeBot';
     group = document.createElement('div');
-    group.className = 'msg-group ' + (isMe ? 'mine' : 'theirs');
+    group.className = 'msg-group ' + (isMe ? 'mine' : isBot ? 'bot' : 'theirs');
 
     if (!isMe) {
       const nameEl = document.createElement('div');
       nameEl.className = 'sender-name';
-      nameEl.textContent = msg.from;
+      nameEl.textContent = isBot ? '⚡ HomeBot' : msg.from;
       group.appendChild(nameEl);
     }
 

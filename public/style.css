@@ -353,6 +353,42 @@ html, body {
 .msg-group.bot .bubble:not(:last-child) { border-bottom-left-radius: 4px; }
 .msg-group.bot .bubble:not(:first-child) { border-top-left-radius: 4px; }
 
+.msg-group.bot-claude { align-items: flex-start; }
+.msg-group.bot-claude .sender-name { color: #34d399; }
+.msg-group.bot-claude .bubble {
+  background: #0c2218;
+  color: var(--text);
+  border-bottom-left-radius: 4px;
+  max-width: min(80%, 600px);
+}
+.msg-group.bot-claude .bubble:last-child { border-bottom-left-radius: 18px; }
+.msg-group.bot-claude .bubble:not(:last-child) { border-bottom-left-radius: 4px; }
+.msg-group.bot-claude .bubble:not(:first-child) { border-top-left-radius: 4px; }
+
+/* Claude thinking indicator */
+.claude-thinking-bubble {
+  display: flex !important;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 18px !important;
+}
+
+.thinking-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+  animation: thinking-pulse 1.2s ease-in-out infinite;
+}
+.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes thinking-pulse {
+  0%, 60%, 100% { opacity: 0.25; transform: scale(0.85); }
+  30% { opacity: 1; transform: scale(1.15); }
+}
+
 .msg-group .sender-name {
   font-size: 12px;
   color: var(--text-muted);

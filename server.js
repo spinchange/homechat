@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
 const https = require('https');
@@ -8,6 +10,21 @@ const path = require('path');
 const { URL } = require('url');
 const { exec } = require('child_process');
 const db = require('./db');
+
+// ─── Claude API ────────────────────────────────────────────────
+let anthropic = null;
+try {
+  const _sdk = require('@anthropic-ai/sdk');
+  const Anthropic = _sdk.default || _sdk;
+  if (process.env.CLAUDE_API_KEY) {
+    anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
+    console.log('Claude API: ready');
+  } else {
+    console.log('Claude API: disabled (add CLAUDE_API_KEY to .env to enable)');
+  }
+} catch (e) {
+  console.log('Claude API: disabled (SDK not found)');
+}
 
 // ─── Rooms ─────────────────────────────────────────────────────
 const ROOMS_FILE = path.join(__dirname, 'rooms.json');
@@ -72,6 +89,7 @@ function broadcastToRoom(room, data) {
 // ─── Known users (everyone who has ever posted) ────────────────
 const knownUsers = new Set(db.getKnownUsers());
 knownUsers.add('HomeBot');
+knownUsers.add('Claude');
 
 function broadcastKnownUsers() {
   broadcast({ type: 'known_users', users: Array.from(knownUsers) });
@@ -150,9 +168,83 @@ function handleBotCommand(text, room) {
         '!storage   — disk space on the server\n' +
         '!network   — devices on the home network\n' +
         '!version   — app and Node version\n' +
-        '!help      — show this list'
+        '!help      — show this list\n\n' +
+        'Claude AI:\n' +
+        '!claude <question>  — ask Claude anything\n' +
+        '#claude room        — every message goes to Claude'
       );
       break;
+  }
+}
+
+// ─── Claude ───────────────────────────────────────────────────
+async function handleClaudeMessage(prompt, room, requestingUser) {
+  if (!anthropic) {
+    const msg = { type: 'room_msg', room: room.name, from: 'Claude',
+      text: '❌ Claude API not configured. Add CLAUDE_API_KEY to .env to enable.', ts: Date.now() };
+    db.saveMessage(msg);
+    broadcastToRoom(room, msg);
+    return;
+  }
+
+  // Notify clients that Claude is thinking
+  broadcastToRoom(room, { type: 'claude_thinking', room: room.name });
+
+  try {
+    const systemPrompt = `You are Claude, an AI assistant in HomeChat, a family home chat app. Be friendly, helpful, and concise. You're chatting in the #${room.name} room. The person talking to you is ${requestingUser}.`;
+
+    // Get recent room history for context.
+    // For the #claude room the current message is already saved, so we exclude it
+    // (slice off the last item) to avoid duplication — the prompt is passed explicitly.
+    // For !claude commands in other rooms the !claude message is filtered out below.
+    const rawHistory = db.getRoomHistory(room.name, 30).slice(-20);
+    const historyForContext = room.name === 'claude'
+      ? rawHistory.slice(0, -1)   // exclude the just-saved message; we'll add prompt below
+      : rawHistory;
+
+    // Build an alternating user/assistant message array
+    const rawMessages = [];
+    for (const m of historyForContext) {
+      if (!m.text || m.text.startsWith('!claude')) continue;
+      rawMessages.push({
+        role: m.from === 'Claude' ? 'assistant' : 'user',
+        content: m.from === 'Claude' ? m.text : `${m.from}: ${m.text}`
+      });
+    }
+    rawMessages.push({ role: 'user', content: prompt });
+
+    // Merge consecutive same-role messages (API requires strict alternation)
+    const apiMessages = [];
+    for (const m of rawMessages) {
+      if (apiMessages.length > 0 && apiMessages[apiMessages.length - 1].role === m.role) {
+        apiMessages[apiMessages.length - 1].content += '\n' + m.content;
+      } else {
+        apiMessages.push({ role: m.role, content: m.content });
+      }
+    }
+
+    // Must start with 'user'
+    while (apiMessages.length > 0 && apiMessages[0].role !== 'user') apiMessages.shift();
+    if (apiMessages.length === 0) apiMessages.push({ role: 'user', content: prompt });
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: apiMessages
+    });
+
+    const responseText = response.content[0].text;
+    const replyMsg = { type: 'room_msg', room: room.name, from: 'Claude', text: responseText, ts: Date.now() };
+    db.saveMessage(replyMsg);
+    broadcastToRoom(room, replyMsg);
+
+  } catch (err) {
+    console.error('Claude API error:', err.message);
+    const errMsg = { type: 'room_msg', room: room.name, from: 'Claude',
+      text: `❌ Sorry, something went wrong. (${err.message})`, ts: Date.now() };
+    db.saveMessage(errMsg);
+    broadcastToRoom(room, errMsg);
   }
 }
 
@@ -369,7 +461,23 @@ wss.on('connection', (ws) => {
       db.saveMessage(msg);
       broadcastToRoom(room, msg);
       if (!knownUsers.has(userName)) { knownUsers.add(userName); broadcastKnownUsers(); }
-      if (msg.text.startsWith('!')) handleBotCommand(msg.text, room);
+
+      if (msg.text.startsWith('!claude')) {
+        const prompt = msg.text.replace(/^!claude\s*/, '').trim();
+        if (prompt) {
+          handleClaudeMessage(prompt, room, userName);
+        } else {
+          const helpMsg = { type: 'room_msg', room: room.name, from: 'Claude',
+            text: 'Usage: !claude <your question>', ts: Date.now() };
+          db.saveMessage(helpMsg);
+          broadcastToRoom(room, helpMsg);
+        }
+      } else if (msg.text.startsWith('!')) {
+        handleBotCommand(msg.text, room);
+      } else if (room.name === 'claude') {
+        // In the #claude room every non-command message auto-triggers Claude
+        handleClaudeMessage(msg.text, room, userName);
+      }
 
     } else if (data.type === 'dm') {
       if (!userName) return;

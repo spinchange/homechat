@@ -304,7 +304,16 @@ function handleMessage(data) {
       break;
     }
 
+    case 'claude_thinking': {
+      if (currentContext?.type === 'room' && currentContext.room === data.room) {
+        showClaudeThinking();
+      }
+      break;
+    }
+
     case 'room_msg': {
+      if (data.from === 'Claude') removeClaudeThinking();
+
       const key = `room:${data.room}`;
       if (!messageHistory[key]) messageHistory[key] = [];
       messageHistory[key].push(data);
@@ -438,7 +447,7 @@ function renderPeople() {
   peopleList.innerHTML = '';
 
   // Build combined list: known users + anyone online not yet known, minus self
-  const allUsers = [...new Set([...knownUsers, ...onlineUsers])].filter(u => u !== myName && u !== 'HomeBot');
+  const allUsers = [...new Set([...knownUsers, ...onlineUsers])].filter(u => u !== myName && u !== 'HomeBot' && u !== 'Claude');
 
   // Sort: online first, then offline alphabetically
   allUsers.sort((a, b) => {
@@ -536,14 +545,17 @@ function renderMessages(msgs) {
     const newGroup = sender !== lastSender || timeDiff > 5 * 60 * 1000; // 5 min gap = new group
 
     if (newGroup) {
-      const isBot = sender === 'HomeBot';
+      const groupClass = isMe ? 'mine' : sender === 'HomeBot' ? 'bot' : sender === 'Claude' ? 'bot-claude' : 'theirs';
       currentGroup = document.createElement('div');
-      currentGroup.className = 'msg-group ' + (isMe ? 'mine' : isBot ? 'bot' : 'theirs');
+      currentGroup.className = 'msg-group ' + groupClass;
+      currentGroup.dataset.sender = sender;
 
       if (!isMe) {
         const nameEl = document.createElement('div');
         nameEl.className = 'sender-name';
-        nameEl.textContent = isBot ? '⚡ HomeBot' : sender;
+        if (sender === 'HomeBot') nameEl.textContent = '⚡ HomeBot';
+        else if (sender === 'Claude') nameEl.textContent = '🤖 Claude';
+        else nameEl.textContent = sender;
         currentGroup.appendChild(nameEl);
       }
 
@@ -574,10 +586,9 @@ function appendMessage(msg) {
 
   // Check if we can append to the last group
   const lastGroup = messages.querySelector('.msg-group:last-child');
-  const lastSenderName = lastGroup?.querySelector('.sender-name')?.textContent;
   const isSameSender = lastGroup && (
     (isMe && lastGroup.classList.contains('mine')) ||
-    (!isMe && lastSenderName === msg.from)
+    (!isMe && lastGroup.dataset.sender === msg.from)
   );
 
   // Check time gap — find last bubble's approximate time
@@ -589,14 +600,17 @@ function appendMessage(msg) {
     const oldTime = group.querySelector('.msg-time');
     if (oldTime) oldTime.remove();
   } else {
-    const isBot = msg.from === 'HomeBot';
+    const groupClass = isMe ? 'mine' : msg.from === 'HomeBot' ? 'bot' : msg.from === 'Claude' ? 'bot-claude' : 'theirs';
     group = document.createElement('div');
-    group.className = 'msg-group ' + (isMe ? 'mine' : isBot ? 'bot' : 'theirs');
+    group.className = 'msg-group ' + groupClass;
+    group.dataset.sender = msg.from;
 
     if (!isMe) {
       const nameEl = document.createElement('div');
       nameEl.className = 'sender-name';
-      nameEl.textContent = isBot ? '⚡ HomeBot' : msg.from;
+      if (msg.from === 'HomeBot') nameEl.textContent = '⚡ HomeBot';
+      else if (msg.from === 'Claude') nameEl.textContent = '🤖 Claude';
+      else nameEl.textContent = msg.from;
       group.appendChild(nameEl);
     }
 
@@ -615,6 +629,29 @@ function appendMessage(msg) {
 
 function scrollToBottom() {
   messages.scrollTop = messages.scrollHeight;
+}
+
+// ─── Claude thinking indicator ─────────────────────────────────
+function showClaudeThinking() {
+  removeClaudeThinking();
+  const indicator = document.createElement('div');
+  indicator.id = 'claude-thinking';
+  indicator.className = 'msg-group bot-claude';
+  indicator.innerHTML = `
+    <div class="sender-name">🤖 Claude</div>
+    <div class="bubble claude-thinking-bubble">
+      <span class="thinking-dot"></span>
+      <span class="thinking-dot"></span>
+      <span class="thinking-dot"></span>
+    </div>
+  `;
+  messages.appendChild(indicator);
+  scrollToBottom();
+}
+
+function removeClaudeThinking() {
+  const el = document.getElementById('claude-thinking');
+  if (el) el.remove();
 }
 
 // ─── Linkify ──────────────────────────────────────────────────

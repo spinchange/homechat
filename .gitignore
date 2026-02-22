@@ -12,3 +12,6 @@ public/uploads/*
 # Server logs
 logs/*
 !logs/.gitkeep
+
+# Environment / secrets
+.env

@@ -12,6 +12,8 @@ A local-network chat app for your household. No cloud, no accounts, no subscript
 - **Offline messaging** — messages are stored; users see everything they missed when they reconnect
 - **Browser notifications** — get notified of DMs when the tab is in the background
 - **Installable PWA** — add to home screen on iPhone or Android for a native app feel
+- **HomeBot** — built-in command bot (`!ping`, `!uptime`, `!who`, `!storage`, `!network`, `!version`, `!help`)
+- **Claude AI** — ask Claude anything with `!claude`, or use the dedicated `#claude` room for ongoing conversation
 
 ## Requirements
 
@@ -26,6 +28,15 @@ cd homechat
 npm install
 node server.js
 ```
+
+**Optional — Claude AI bot:**
+
+1. Get an API key at [console.anthropic.com](https://console.anthropic.com)
+2. Copy `.env.example` to `.env` and add your key:
+   ```
+   CLAUDE_API_KEY=sk-ant-...
+   ```
+3. Restart the server — you'll see `Claude API: ready` in the output
 
 The console will print two URLs:
 
@@ -66,11 +77,40 @@ Default rooms: `general`, `finances`, `travel`, `kids`, `appointments`, `events`
 - **Private rooms** are only visible to the members selected at creation time
 - Only the room's creator can **delete** it; default rooms are permanent
 
+## HomeBot
+
+A built-in utility bot. Type any command in any room:
+
+| Command | Description |
+|---|---|
+| `!ping` | Check if the bot is alive |
+| `!uptime` | Server uptime |
+| `!who` | Who's currently online |
+| `!storage` | Disk space on the server machine |
+| `!network` | Devices on the home network |
+| `!version` | App and Node.js version |
+| `!help` | Full command list |
+
+## Claude AI
+
+Requires a `CLAUDE_API_KEY` in `.env` (see Setup above).
+
+| Command | Description |
+|---|---|
+| `!claude <question>` | Ask Claude anything from any room |
+| `!remember <fact>` | Save a fact to Claude's persistent memory |
+| `!memory` | View all saved memories |
+| `!forget <number>` | Remove a memory by number |
+
+**`#claude` room** — create a room named `claude` and every message you send automatically triggers Claude. No prefix needed. Claude maintains conversation context across the thread.
+
+**Memory** — facts saved with `!remember` are written to `claude-context.txt` and injected into Claude's system prompt on every request. Edit the file directly for bulk changes; one fact per line.
+
 ## Data
 
 All messages are stored locally in `messages.ndjson`. Uploaded images live in `public/uploads/`. Neither is tracked in git — your data stays on your machine.
 
-To back up your history, copy those two paths somewhere safe.
+To back up your history, copy those two paths somewhere safe. Also back up `claude-context.txt` if you've built up Claude's memory.
 
 ## Limitations
 

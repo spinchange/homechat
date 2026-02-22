@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# User data — local only, never commit
+messages.ndjson
+rooms.json
+
+# Uploaded images
+public/uploads/*
+!public/uploads/.gitkeep
+
+# Server logs
+logs/*
+!logs/.gitkeep

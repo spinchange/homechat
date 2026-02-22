@@ -171,9 +171,68 @@ function handleBotCommand(text, room) {
         '!help      — show this list\n\n' +
         'Claude AI:\n' +
         '!claude <question>  — ask Claude anything\n' +
+        '!remember <fact>    — save a fact to Claude\'s memory\n' +
+        '!memory             — view all saved memories\n' +
+        '!forget <number>    — remove a memory by number\n' +
         '#claude room        — every message goes to Claude'
       );
       break;
+  }
+}
+
+// ─── Claude memory (claude-context.txt) ───────────────────────
+const CONTEXT_FILE = path.join(__dirname, 'claude-context.txt');
+
+function loadClaudeContext() {
+  try {
+    if (fs.existsSync(CONTEXT_FILE)) {
+      return fs.readFileSync(CONTEXT_FILE, 'utf8').trim();
+    }
+  } catch {}
+  return '';
+}
+
+function claudeRespond(room, text) {
+  const msg = { type: 'room_msg', room: room.name, from: 'Claude', text, ts: Date.now() };
+  db.saveMessage(msg);
+  broadcastToRoom(room, msg);
+}
+
+function handleRemember(fact, room) {
+  const line = fact.trim();
+  if (!line) { claudeRespond(room, 'Usage: !remember <fact>'); return; }
+  try {
+    fs.appendFileSync(CONTEXT_FILE, line + '\n', 'utf8');
+    claudeRespond(room, `✅ Got it — I'll remember: "${line}"`);
+  } catch (err) {
+    claudeRespond(room, `❌ Couldn't save: ${err.message}`);
+  }
+}
+
+function handleMemory(room) {
+  const lines = loadClaudeContext().split('\n').filter(l => l.trim());
+  if (lines.length === 0) {
+    claudeRespond(room, 'No memories saved yet. Use !remember <fact> to add one.');
+    return;
+  }
+  const list = lines.map((l, i) => `${i + 1}. ${l}`).join('\n');
+  claudeRespond(room, `📝 My memory (${lines.length} fact${lines.length !== 1 ? 's' : ''}):\n${list}`);
+}
+
+function handleForget(n, room) {
+  const lines = loadClaudeContext().split('\n').filter(l => l.trim());
+  const idx = parseInt(n, 10) - 1;
+  if (!n || isNaN(idx) || idx < 0 || idx >= lines.length) {
+    claudeRespond(room, `❌ No memory #${n}. Use !memory to see the list.`);
+    return;
+  }
+  const removed = lines[idx];
+  lines.splice(idx, 1);
+  try {
+    fs.writeFileSync(CONTEXT_FILE, lines.join('\n') + (lines.length ? '\n' : ''), 'utf8');
+    claudeRespond(room, `🗑️ Forgot: "${removed}"`);
+  } catch (err) {
+    claudeRespond(room, `❌ Couldn't update memory: ${err.message}`);
   }
 }
 
@@ -191,7 +250,8 @@ async function handleClaudeMessage(prompt, room, requestingUser) {
   broadcastToRoom(room, { type: 'claude_thinking', room: room.name });
 
   try {
-    const systemPrompt = `You are Claude, an AI assistant in HomeChat, a family home chat app. Be friendly, helpful, and concise. You're chatting in the #${room.name} room. The person talking to you is ${requestingUser}.`;
+    const context = loadClaudeContext();
+    const systemPrompt = `You are Claude, an AI assistant in HomeChat, a family home chat app. Be friendly, helpful, and concise. You're chatting in the #${room.name} room. The person talking to you is ${requestingUser}.${context ? `\n\nFamily context — always keep this in mind:\n${context}` : ''}`;
 
     // Get recent room history for context.
     // For the #claude room the current message is already saved, so we exclude it
@@ -467,11 +527,14 @@ wss.on('connection', (ws) => {
         if (prompt) {
           handleClaudeMessage(prompt, room, userName);
         } else {
-          const helpMsg = { type: 'room_msg', room: room.name, from: 'Claude',
-            text: 'Usage: !claude <your question>', ts: Date.now() };
-          db.saveMessage(helpMsg);
-          broadcastToRoom(room, helpMsg);
+          claudeRespond(room, 'Usage: !claude <your question>');
         }
+      } else if (msg.text.startsWith('!remember')) {
+        handleRemember(msg.text.replace(/^!remember\s*/, ''), room);
+      } else if (msg.text === '!memory') {
+        handleMemory(room);
+      } else if (msg.text.startsWith('!forget')) {
+        handleForget(msg.text.replace(/^!forget\s*/, '').trim(), room);
       } else if (msg.text.startsWith('!')) {
         handleBotCommand(msg.text, room);
       } else if (room.name === 'claude') {
